@@ -45,7 +45,7 @@ class LeaderRobot(Node):
                                                               self.amclPoseCallback,
                                                               amcl_pose_qos)
         self.follower_pose_pub = self.create_publisher(PoseStamped,
-                                                      '/robile_1/goal_pose', #TODO change this to get the follower name
+                                                      '/robile_1/goal_update', #TODO change this to get the follower name
                                                       10)
         
 
@@ -119,7 +119,7 @@ def main():
     goal_pose1 = PoseStamped()
     goal_pose1.header.frame_id = robot_namespace+'/map'
     goal_pose1.header.stamp = navigator.get_clock().now().to_msg()
-    goal_pose1.pose.position.x = 0.0
+    goal_pose1.pose.position.x = 0.0  
     goal_pose1.pose.position.y = 3.08
     goal_pose1.pose.orientation.w = 0.707
     goal_pose1.pose.orientation.z = 0.707

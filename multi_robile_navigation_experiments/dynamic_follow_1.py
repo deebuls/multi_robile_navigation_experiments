@@ -60,10 +60,10 @@ def main():
     # set our demo's goal poses to follow
     goal_poses = []
     goal_pose1 = PoseStamped()
-    goal_pose1.header.frame_id = robot_namespace+'/base_link'
+    goal_pose1.header.frame_id = robot_namespace+'/map'
     goal_pose1.header.stamp = navigator.get_clock().now().to_msg()
-    goal_pose1.pose.position.x = 0.0
-    goal_pose1.pose.position.y = 0.0
+    goal_pose1.pose.position.x = 0.0  #goal before changing yaml of map
+    goal_pose1.pose.position.y = 1.0
     goal_pose1.pose.orientation.w = 0.0
     goal_pose1.pose.orientation.z = 0.0
     goal_poses.append(goal_pose1)

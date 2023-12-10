@@ -62,8 +62,8 @@ def main():
     goal_pose1 = PoseStamped()
     goal_pose1.header.frame_id = robot_namespace+'/map'
     goal_pose1.header.stamp = navigator.get_clock().now().to_msg()
-    goal_pose1.pose.position.x = -124.1
-    goal_pose1.pose.position.y = -2.44
+    goal_pose1.pose.position.x = 0.0
+    goal_pose1.pose.position.y = 4.0
     goal_pose1.pose.orientation.w = 0.707
     goal_pose1.pose.orientation.z = 0.707
     goal_poses.append(goal_pose1)
@@ -109,7 +109,7 @@ def main():
             now = navigator.get_clock().now()
 
             # Some navigation timeout to demo cancellation
-            if now - nav_start > Duration(seconds=600.0):
+            if now - nav_start > Duration(seconds=1200.0):
                 navigator.cancelTask()
 
             # Some follow waypoints request change to demo preemption
@@ -136,7 +136,7 @@ def main():
     else:
         print('Goal has an invalid return status!')
 
-    navigator.lifecycleShutdown()
+    #navigator.lifecycleShutdown()
 
     exit(0)
 
