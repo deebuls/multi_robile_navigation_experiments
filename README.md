@@ -1,10 +1,17 @@
 # multi_robile_navigation_experiments
-# multi_robile_navigation_experiments
+
+# Video
+
+https://github.com/deebuls/multi_robile_navigation_experiments/assets/6873193/604ed4d0-7228-4354-8fdb-7b5833071243
+
+
+
 
 # Commands
 
 In separate windows
 ``` bash
+
 ------ Window 1 Gazebo
 $> ros2 launch robile_gazebo multi_robile_sim.launch.py
 ------ EDDI
