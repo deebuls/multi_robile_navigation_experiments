@@ -8,6 +8,9 @@ from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 
 from robot_navigator import BasicNavigator, TaskResult
+
+from std_msgs.msg import Int32, String, Bool
+
 import time #remove
 
 class RobotContext:
@@ -45,7 +48,8 @@ class State(ABC):
     The base state class declares methods that both the leader and follower
     robot should implement 
     """
-
+    LEADER=1
+    FOLLOWER=0
 
     @property
     def context(self) -> Context:
@@ -59,6 +63,22 @@ class State(ABC):
     def execute_behaviour(self, navigator, node) -> None:
         pass
 
+    def sendEDDImessage(self, leader_or_follower):
+
+        msg = Int32()
+        msg.data = leader_or_follower # for leader state send 1
+        self.node.eddi_robot_state_pub.publish(msg)
+
+        msg = Bool()
+        msg.data = self.node.camera_working
+        self.node.eddi_camera.publish(msg)
+        
+        msg.data = self.node.lidar_working
+        self.node.eddi_lidar.publish(msg)
+
+        msg.data = self.node.navigation_working
+        self.node.eddi_navigation_robile_0.publish(msg)
+        self.node.eddi_navigation_robile_1.publish(msg)
 
 class FollowerState(State):
     def _initSubscibersPublishers(self, node):
@@ -74,7 +94,7 @@ class FollowerState(State):
                                                         10)
         
     def leaderPoseGoalCallback(self, msg):
-        print ("FollowerState: receiveed message from leader forwarding  to ", self.node.namespace)
+        print ("FollowerState: received message from leader forwarding  to ", self.node.namespace)
         #changing the frame_id to self namespace and publishing to self goal update
         msg.header.frame_id = self.node.namespace+'/map'
         self.follower_pose_pub.publish(msg)
@@ -89,9 +109,13 @@ class FollowerState(State):
         self.node.destroy_subscription(self.leader_goal_sub)
         return
 
+
+
     def execute_behaviour(self, navigator, node):
         self.node = node
         self._initSubscibersPublishers(node)
+
+        self.sendEDDImessage(leader_or_follower=State.FOLLOWER)
         # set our demo's goal poses to follow
         goal_poses = []
         goal_pose1 = PoseStamped()
@@ -120,14 +144,21 @@ class FollowerState(State):
                 print('FollowerState: Executing current pose: ' +
                         'Time : ' + str( now - nav_start))
 
+                self.sendEDDImessage(leader_or_follower=State.FOLLOWER)
                 # Some navigation timeout to demo cancellation
-                if now - nav_start > Duration(seconds=120.0):
-                    print ("FollowerState : Next will transition to LeaderState")
+                if now - nav_start > Duration(seconds=1200.0):
+                    print ("FollowerState : Timeout")
                     self.stopSubscription()
-                    self._context.transition_to(LeaderState(), navigator, node)
                     navigator.cancelTask()
-                    print ("FollowerState : Next will transition to LeaderState")
                     #self.transition_to(LeaderState(), navigator, node)
+                if node.eddi_adaptation_msg == 'follower_takeover':
+                    print ("FollowerState : Takeover message ##")
+                    self.stopSubscription()
+                    #navigator.cancelTask()
+                    print ("FollowerState : Next will transition to LeaderState")
+                    self._context.transition_to(LeaderState(), navigator, node)
+                    #self.transition_to(LeaderState(), navigator, node)
+
 
                 # If some message from the EDDI then change state to leader TODO
                 #if self.change_to_leader_transition:
@@ -151,12 +182,16 @@ class FollowerState(State):
 class WaitingForLeaderState(State):
 
     def execute_behaviour(self, navigator, node):
+        self.node = node
+
+        self.sendEDDImessage(State.FOLLOWER)
         nav_start = navigator.get_clock().now()
         now = navigator.get_clock().now()
         # Some navigation timeout to demo cancellation
-        while not now - nav_start > Duration(seconds=120.0):
+        while not now - nav_start > Duration(seconds=1200.0):
+            self.sendEDDImessage(State.FOLLOWER)
             print ("WaitingForLeaderState: Sleeping now")
-            time.sleep(10)
+            time.sleep(1)
 
         print ("WaitingForLeaderState : Next will transition to Follower")
         self._context.transition_to(FollowerState(), navigator, node)
@@ -167,6 +202,7 @@ class LeaderState(State):
         self.follower_pose_pub = node.create_publisher(PoseStamped,
                                                       '/follower'+'/goal_update',  #adding / in beginning doesnot add namespace
                                                       10)
+
         self.leader_goal_upate = None
 
 
@@ -180,13 +216,15 @@ class LeaderState(State):
             self.follower_pose_pub.publish(goal_pose1)
             print ("Publishing pose : ", goal_pose1.pose.position.x, goal_pose1.pose.position.y)
 
-            return
+        return
 
 
     def execute_behaviour(self, navigator, node):
+        self.node = node
         self._initSubscibersPublishers(node)
         # Wait for navigation to fully activate, since autostarting nav2
         navigator.waitUntilNav2Active()
+        self.publishFollowerUpdateGoal(node, navigator.get_clock().now().to_msg())
 
         # set our demo's goal poses to follow
         goal_poses = []
@@ -215,10 +253,17 @@ class LeaderState(State):
                         'Time : ' + str( now - nav_start))
                 self.publishFollowerUpdateGoal(node, navigator.get_clock().now().to_msg())
 
+                self.sendEDDImessage(State.LEADER)
                 # Some navigation timeout to demo cancellation
                 if now - nav_start > Duration(seconds=120.0):
-                    self._context.transition_to(WaitingForLeaderState(), navigator, node)
-                    navigator.cancelTask()
+                    if node.eddi_adaptation_msg == 'follower_takeover':
+                        pass
+                    else:
+                        node.navigation_working = False
+                        #TODO move eddi messages to state class and call in all while loops
+                        self.sendEDDImessage(State.LEADER)
+                        self._context.transition_to(WaitingForLeaderState(), navigator, node)
+                        navigator.cancelTask()
 
         # Do something depending on the return code
         result = navigator.getResult()
@@ -247,12 +292,33 @@ class Robot(Node):
           history=QoSHistoryPolicy.KEEP_LAST,
           depth=1)
         self.robot_amcl_pose_with_covariance = None
+        self.eddi_adaptation_msg = None
 
         self.localization_pose_sub = self.create_subscription(PoseWithCovarianceStamped,
                                                               'amcl_pose',
                                                               self.amclPoseCallback,
                                                               amcl_pose_qos)
+        self.eddi_robot_state_pub = self.create_publisher(Int32,
+                '/'+self.namespace+'/robile_position', 10)
+        self.eddi_camera = self.create_publisher(Bool,
+                '/'+self.namespace+'/consert/camera', 1)
+        self.eddi_lidar = self.create_publisher(Bool,
+                '/'+self.namespace+'/consert/lidar', 1)
+        self.eddi_navigation_robile_0 = self.create_publisher(Bool,
+                '/robile_0/consert/navigation', 1)
+        self.eddi_navigation_robile_1 = self.create_publisher(Bool,
+                '/robile_1/consert/navigation', 1)
+        #TODO when the problem of adapatation message is fixed
+        #remove above two and make it single
+        #self.eddi_navigation = self.create_publisher(Bool,
+        #        '/'+self.namespace'/consert/navigation', 1)
 
+        self.camera_working = True
+        self.lidar_working = True
+        self.navigation_working = True
+
+        self.eddi_robot_adaptation_sub = self.create_subscription(String, '/'+self.namespace+'/adaptation', self.eddi_adaptation_callback, 10)
+        self.spin_once()
         self.navigator = BasicNavigator(namespace=namespace)
         if robot_state == 'Leader':
             self.robot_context = RobotContext(LeaderState(), self.navigator, self)
@@ -261,7 +327,11 @@ class Robot(Node):
 
         self.waitForInitialPose()
         #TODO subscribe to all the  topics of eddi based on node name 
-        
+
+
+    def eddi_adaptation_callback(self, msg): 
+        self.get_logger().info("Recevied adapation msg : %s" % msg.data)
+        self.eddi_adaptation_msg = msg.data
 
     def amclPoseCallback(self, msg):
         self.get_logger().debug('Received amcl pose')

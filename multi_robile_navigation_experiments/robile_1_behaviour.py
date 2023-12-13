@@ -7,7 +7,7 @@ def main():
     rclpy.init()
     robot_namespace = 'robile_1'
 
-    robot = Robot(node_name=robot_namespace, namespace=robot_namespace, robot_state='Follower')
+    robot = Robot(node_name='robile_1_namespace', namespace=robot_namespace, robot_state='Follower')
     robot.robot_context = RobotContext(FollowerState(), robot.navigator, robot)
     #robot.execute_navigation()
     print ("done")
